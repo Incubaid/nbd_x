@@ -111,14 +111,15 @@ module Nbd(B:BACK) = (struct
 end : NBD)
 open Generic
 
-(* module NbdArakoon = (Nbd(GenericBack(Block.ArBlock)) : NBD) *)
+
 module NbdF = (Nbd(Fsback.FsBack) : NBD)
 module NbdM = (Nbd(Memback.MemBack): NBD) 
+module NbdA = (Nbd(GenericBack(Block.ArBlock)) : NBD)
 let main () = 
   let modules = 
     [("file"   , (module NbdF : NBD));
      ("mem",     (module NbdM : NBD)); 
-    (* ("arakoon", (module NbdA : NBD));*)
+     ("arakoon", (module NbdA : NBD));
     ]
   in 
   let uri = Sys.argv.(1) in 
