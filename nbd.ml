@@ -1,21 +1,8 @@
-let _MAGIC = "NBDMAGIC\x00\x00\x42\x02\x81\x86\x12\x53"
-
-let to_hex s = 
-  let rec loop acc i = 
-    if i < 0 then String.concat " " acc
-    else
-      let c = s.[i] in
-      let ci = Char.code c in
-      let acc' = Printf.sprintf "%2x" ci :: acc in
-      loop acc' (i-1)
-  in
-  loop [] (String.length s-1)
-
-let log_f x = Lwt_io.printlf x
 
 open Lwt
 open Back
-
+open Block
+open Nbd_protocol
 
 module type NBD = sig
   val nbd : uri -> Lwt_unix.file_descr -> unit Lwt.t
@@ -26,17 +13,11 @@ module Nbd(B:BACK) = (struct
 
 
   let nbd uri socket = 
-    let ic = Lwt_io.of_fd Lwt_io.input socket in
-    let oc = Lwt_io.of_fd Lwt_io.output socket in
+    let ic = Lwt_io.of_fd ~buffer_size:8192 ~mode:Lwt_io.input socket in
+    let oc = Lwt_io.of_fd ~buffer_size:8192 ~mode:Lwt_io.output socket in
     B.create uri >>= fun back ->
     let device_size = B.device_size back in
-    log_f "device_size:%i%!" device_size >>= fun () ->
-    let output = Buffer.create (16 + 8 + 128) in
-    let () = P.output_raw output _MAGIC in
-    let () = P.output_uint64 output device_size in
-    let () = P.output_raw  output (String.make 128  '\x00') in
-    let msg = P.contents output in
-    Lwt_io.write oc msg >>= fun () ->
+    Nbd_protocol.write_preamble oc device_size >>= fun () ->
     let header = String.create 128 in
     let input = P.make_input header 0 in
     let rec loop back = 
@@ -49,21 +30,13 @@ module Nbd(B:BACK) = (struct
         let offset  = P.input_uint64 input in
         let dlen    = P.input_uint32 input in
         assert (magic = 0x25609513);
-        let write_response rc handle = 
-          let output = Buffer.create (4 + 4 + 8) in
-          let () = P.output_raw output "gDf\x98" in
-          let () = P.output_uint32 output rc in
-          let () = P.output_raw output handle in
-          let msg = P.contents output in
-        (* log_f "msg=%s" (to_hex msg) >>= fun () -> *)
-          Lwt_io.write oc msg 
-        in
-        (* log_f "header:%s\noffset:\t%i\ndlen:\t%i%!" (to_hex header) offset dlen >>= fun ()->  *)
+        (* log_f "req=%i offset=%016x dlen=%i%!" request offset dlen >>= fun ()->   *)
         if offset < 0 || offset +dlen > device_size
         then 
           begin
             log_f "%i < 0 || %i >= %i" offset offset device_size >>= fun () ->
-            write_response 1 handle
+            Nbd_protocol.write_response oc 1 handle >>= fun () ->
+            log_f "ending it here %!"
           end
         else
           begin
@@ -72,7 +45,7 @@ module Nbd(B:BACK) = (struct
                 begin
                 (*log_f "read\t0x%016x\t0x%08x\t%f%!" offset dlen (Unix.gettimeofday ()) >>= fun () -> *)
                   B.read back offset dlen >>= fun buf ->
-                  write_response 0 handle >>= fun () ->
+                  Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   Lwt_io.write oc buf >>= fun () ->
                   loop back
                 end
@@ -84,7 +57,7 @@ module Nbd(B:BACK) = (struct
                   let buf = String.create dlen in
                   Lwt_io.read_into_exactly ic buf 0 dlen >>= fun () ->
                   B.write back buf 0 dlen offset >>= fun () ->
-                  write_response 0 handle >>= fun () ->
+                  Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end
               | 2 -> (* DISCONNECT *)
@@ -94,57 +67,70 @@ module Nbd(B:BACK) = (struct
               | 3 -> (* FLUSH *)
                 begin
                   B.flush back >>= fun () ->
-                  write_response 0 handle >>= fun () ->
+                  Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end
               | r ->
                 begin
                   log_f "r=%i" r >>= fun () ->
-                  write_response 0 handle >>= fun () ->
+                  Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end
           end
       end
     in
-    loop back
+    Lwt.catch 
+      (fun () -> loop back)
+      (fun e -> log_f "e: %s" (Printexc.to_string e))
       
 end : NBD)
 open Generic
 
 
-module NbdF = (Nbd(Fsback.FsBack) : NBD)
-module NbdM = (Nbd(Memback.MemBack): NBD) 
-module NbdA = (Nbd(GenericBack(Block.ArBlock)) : NBD)
+module NbdF = (Nbd(GenericBack(Block.CacheBlock(Block.FileBlock))) : NBD)
+module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD) 
+module NbdA = (Nbd(GenericBack(Block.ArBlock))   : NBD)
+module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
+
 let main () = 
+  Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
   let modules = 
     [("file"   , (module NbdF : NBD));
      ("mem",     (module NbdM : NBD)); 
      ("arakoon", (module NbdA : NBD));
+     ("nbd"    , (module NbdN : NBD));
     ]
   in 
-  let uri = Sys.argv.(1) in 
+  let port = ref 9000 in
   (* 
      "file:////tmp/my_vol" 
      "arakoon://127.0.0.1:4000/ricky"
      "mem://"
   *)
-  let which = Scanf.sscanf uri "%s@://" (fun s -> s) in
+  let uri = ref "mem://" in
+  let args = [("-p", Arg.Set_int port, "server port");
+             ] 
+  in Arg.parse args (fun s -> uri := s) "xxxx"; 
+
+  let which = Scanf.sscanf !uri "%s@://" (fun s -> s) in
   Printf.printf "which:%s\n%!" which;
   let module MyNBD = (val (List.assoc which modules)) in
-  let port = 9000 in
   let server () = 
     let ss = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1", port) in
+    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1", !port) in
     Lwt_unix.setsockopt ss Unix.SO_REUSEADDR true;
     Lwt_unix.bind ss sa;
     Lwt_unix.listen ss 1024;
-    log_f "server started on port %i" port >>= fun () ->
+    log_f "server started on port %i" !port >>= fun () ->
+    let wrap f = 
+      Lwt.catch f (fun ex -> log_f "ex:%s" (Printexc.to_string ex))
+    in
     let rec loop () = 
       begin
         Lwt.catch
           (fun () ->
             Lwt_unix.accept ss >>= fun (fd,_) ->
-            Lwt.ignore_result (MyNBD.nbd uri fd);
+            Lwt.ignore_result (wrap (fun () -> MyNBD.nbd !uri fd));
             Lwt.return ()          
           )
           (function
