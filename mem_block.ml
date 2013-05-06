@@ -40,6 +40,11 @@ module MemBlock = (struct
     in
     Lwt.return block
 
+  let read_blocks t lbas = 
+    Lwt_list.map_s 
+      (fun lba -> read_block t lba >>= fun block -> Lwt.return (lba,block)) 
+      lbas
+
   let write_blocks t writes =
     let map = t.blocks in
     let add_one map (lba,block) =         

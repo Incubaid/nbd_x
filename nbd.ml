@@ -13,6 +13,7 @@ module Nbd(B:BACK) = (struct
 
 
   let nbd uri socket = 
+    log_f "nbd: %s" uri >>= fun () ->
     let ic = Lwt_io.of_fd ~buffer_size:8192 ~mode:Lwt_io.input socket in
     let oc = Lwt_io.of_fd ~buffer_size:8192 ~mode:Lwt_io.output socket in
     B.create uri >>= fun back ->
@@ -43,7 +44,8 @@ module Nbd(B:BACK) = (struct
             match request with
               | 0 -> (* READ *)
                 begin
-                (*log_f "read\t0x%016x\t0x%08x\t%f%!" offset dlen (Unix.gettimeofday ()) >>= fun () -> *)
+                  (* let stamp = Unix.gettimeofday() in
+                  log_f "read\t0x%016x\t0x%08x\t%f%!" offset dlen stamp >>= fun () ->  *)
                   B.read back offset dlen >>= fun buf ->
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   Lwt_io.write oc buf >>= fun () ->
@@ -51,9 +53,8 @@ module Nbd(B:BACK) = (struct
                 end
               | 1 -> (* WRITE *)
                 begin
-                  (*let stamp = Unix.gettimeofday() in
-                  log_f "write\t0x%016x\t0x%08x\t%f%!" offset dlen stamp >>= fun () ->
-                  *)
+                  (* let stamp = Unix.gettimeofday() in
+                  log_f "write\t0x%016x\t0x%08x\t%f%!" offset dlen stamp >>= fun () -> *)
                   let buf = String.create dlen in
                   Lwt_io.read_into_exactly ic buf 0 dlen >>= fun () ->
                   B.write back buf 0 dlen offset >>= fun () ->
@@ -87,9 +88,9 @@ end : NBD)
 open Generic
 
 
-module NbdF = (Nbd(GenericBack(Block.CacheBlock(Block.FileBlock))) : NBD)
+module NbdF = (Nbd(GenericBack(Cache.CacheBlock(Block.FileBlock))) : NBD)
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD) 
-module NbdA = (Nbd(GenericBack(Block.ArBlock))   : NBD)
+module NbdA = (Nbd(GenericBack(Cache.CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
 module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
 
 let main () = 

@@ -8,39 +8,45 @@ module GenericBack(B:BLOCK) = (struct
   let block_size t = B.block_size t.b
 
   let create uri = 
-    log_f "Generic: create %s" uri >>= fun ()->
+    log_f "generic: create %s" uri >>= fun ()->
     B.create uri >>= fun b ->
     Lwt.return { b }
 
 
   let read t off dlen = 
+    (* log_f "generic: read off:%016x dlen:%04x" off dlen >>= fun () -> *)
     let bs = block_size t in
-    let lba = off / bs in
-    match off mod bs with
-      | 0 -> 
-        begin
-          let r = String.create dlen in
-          let rec loop lba roff =
-            if roff >= dlen
-            then Lwt.return r
-            else
-              begin
-                B.read_block t.b lba >>= fun block ->
-                String.blit block 0 r roff bs;
-                loop (lba+1) (roff + bs) 
-              end
+    let lba0 = off / bs in
+    match off mod bs, dlen mod bs with
+      | 0,0 ->
+        let lbas, count =
+          let rec loop rlbas count lba roff = 
+            if roff = dlen 
+            then List.rev rlbas, count
+            else loop (lba :: rlbas) (count + 1) (lba + 1) (roff + bs)
           in
-          loop lba 0
-        end
+          loop [] 0 lba0 0
+        in
+        (* log_f "count=%i" count >>= fun () -> *)
+        B.read_blocks t.b lbas >>= fun lbabs ->
+        let r = String.create dlen in
+        let () = 
+          List.iter (fun (lba,block) -> 
+            let pos = (lba - lba0) * bs in
+            String.blit block 0 r pos bs)
+            lbabs
+        in
+        Lwt.return r
           
-      | r when r + dlen < bs -> 
+      | r,0 when r + dlen < bs -> 
         begin
           let inner = r in
-          B.read_block t.b lba >>= fun block ->
+          B.read_blocks t.b [lba0] >>= fun lbabs ->
+          let (_,block) = List.hd lbabs in
           let part = String.sub block inner dlen in
           Lwt.return part
         end
-      | r -> Lwt.fail (Failure "case not supported")
+      | r,dr -> Lwt.fail (Failure (Printf.sprintf "case not supported: bs=%i r=%i,dr=%i" bs r dr))
         
   let write t buf boff dlen off =
     let bs = block_size t in
@@ -49,11 +55,7 @@ module GenericBack(B:BLOCK) = (struct
       | 0 -> 
         (* still 2 cases. *)
         begin 
-          if dlen = bs 
-          then 
-            let block = String.sub buf boff bs in
-            B.write_blocks t.b [(lba,block)]
-          else if dlen mod bs = 0 
+          if dlen mod bs = 0 
           then (* a multitude of blocks *)
             let too_far = String.length buf in
             let rec loop lba coff = 
@@ -73,12 +75,13 @@ module GenericBack(B:BLOCK) = (struct
           let bstart = r in
           let blen = min (bs - r) dlen in
           let rec loop lba bstart blen todo =
-            log_f "loop %016x %i %i %i" lba bstart blen todo >>= fun () ->
+            log_f "generic: loop %016x %i %i %i" lba bstart blen todo >>= fun () ->
             if todo <= 0 
             then Lwt.return ()
             else 
               begin
-                B.read_block t.b lba >>= fun block ->
+                B.read_blocks t.b [lba] >>= fun lbabs ->
+                let (_,block) = List.hd lbabs in
                 let () = String.blit buf boff block bstart blen in
                 B.write_blocks t.b [(lba,block)]  >>= fun () ->
                 let lba' = lba + 1 in
@@ -92,8 +95,7 @@ module GenericBack(B:BLOCK) = (struct
           loop lba bstart blen dlen
         end
 
-  let flush t = 
-    B.flush t.b
+  let flush t = B.flush t.b
 
   let disconnect t = log_f "disconnect%!" >>= fun () ->Lwt.return ()
 

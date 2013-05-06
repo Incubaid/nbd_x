@@ -45,21 +45,24 @@ module NBDBlock = (struct
     Lwt_list.iter_s do_one writes 
 
 
-  let read_block t lba = 
+  let read_blocks t lbas = 
     let bs = block_size t in
-    let off = lba * bs in
     let dlen = bs in
-    Nbd_protocol.write_request t.oc Nbd_protocol._READ t.handle off dlen >>= fun () ->
-    Nbd_protocol.read_response t.ic >>= fun response ->
-    assert (Nbd_protocol.handle response = t.handle);
-    let rc = Nbd_protocol.rc response in
-    if rc = 0
-    then
-      let block = String.create dlen in
-      Lwt_io.read_into_exactly t.ic block 0 dlen >>= fun () ->
-      Lwt.return block
-    else
-      Lwt.fail (Failure (Printf.sprintf "rc=%i" rc))
+    let read_block lba = 
+      let off = lba * bs in
+      Nbd_protocol.write_request t.oc Nbd_protocol._READ t.handle off dlen >>= fun () ->
+      Nbd_protocol.read_response t.ic >>= fun response ->
+      assert (Nbd_protocol.handle response = t.handle);
+      let rc = Nbd_protocol.rc response in
+      if rc = 0
+      then
+        let block = String.create dlen in
+        Lwt_io.read_into_exactly t.ic block 0 dlen >>= fun () ->
+        Lwt.return block
+      else
+        Lwt.fail (Failure (Printf.sprintf "rc=%i" rc))
+    in
+    Lwt_list.map_s (fun lba -> read_block lba >>= fun block -> Lwt.return (lba,block)) lbas
 
     
     

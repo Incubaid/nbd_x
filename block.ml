@@ -13,7 +13,7 @@ module type BLOCK = sig
 
   val create : string -> t Lwt.t
 
-  val read_block  : t -> lba -> string Lwt.t
+  val read_blocks  : t -> lba list -> ((lba * string) list) Lwt.t
 
   val write_blocks : t -> (lba * string) list -> unit Lwt.t
 
@@ -21,52 +21,6 @@ module type BLOCK = sig
 end
 
 
-module CacheBlock (B: BLOCK) = (struct
-
-
-  module LbaMap = Map.Make(struct type t = lba let compare = compare end)
-  module StringMap = Map.Make(String)
-  type block = string
-  type t = { 
-    back : B.t;
-    mutable known: block LbaMap.t;
-  }
-  
-  let block_size t = B.block_size t.back
-
-  let create uri = 
-    B.create uri >>= fun b ->
-    let t = {back = b; 
-             known = LbaMap.empty;
-            } in
-    Lwt.return t
-  
-  let _learn_block known (lba,block) = 
-    let known'= 
-      if LbaMap.cardinal known > 3000 
-      then
-        let k,_ = LbaMap.choose known in
-        LbaMap.remove k known
-      else 
-        known 
-    in
-    LbaMap.add lba block known'
-
-  let write_blocks t writes = 
-    let () = t.known <- List.fold_left _learn_block t.known writes in
-    log_f "cache_size: %i%!" (LbaMap.cardinal t.known) >>= fun () ->
-    B.write_blocks t.back writes
-
-      
-  let read_block t lba = 
-    try  let block = LbaMap.find lba t.known in 
-         log_f "from cache: %x%!" lba >>= fun () ->
-         Lwt.return block
-    with Not_found -> B.read_block t.back lba
-
-  let flush t = B.flush t.back 
-
-end: BLOCK)
 
 let to_hex s = 
   let rec loop acc i = 
@@ -93,7 +47,7 @@ module FileBlock = (struct
     Lwt.return {fd;device_size}
       
 
-  let block_size t = 4096
+  let block_size t = 1024
 
   let rec _read_buf fd buf o td = 
     if td = 0
@@ -116,6 +70,10 @@ module FileBlock = (struct
     _read_buf fd block 0 bs >>= fun () ->
     Lwt.return block
 
+
+  let read_blocks t lbas = 
+    Lwt_list.map_s(fun lba -> read_block t lba >>= fun block -> Lwt.return (lba,block)) lbas
+      
   let rec _write_buf fd buf o td = 
     if td = 0 
     then Lwt.return () 
@@ -143,53 +101,3 @@ module FileBlock = (struct
 end : BLOCK)
 
 
-module ArBlock = (struct
-  type t = { 
-    sa : Unix.sockaddr ; 
-    mc : Arakoon_client.client;
-  }
-
-  open Lwt
-  let create uri = 
-    (* arakoon://host:port *) 
-    let host,port,cluster_id = Scanf.sscanf uri "arakoon://%s@:%i/%s@" (fun host port cid-> (host,port,cid)) in
-    let ia = Unix.inet_addr_of_string host in
-    let sa = Unix.ADDR_INET (ia, port) in
-    Lwt_io.open_connection sa >>= fun conn ->
-    Arakoon_remote_client.make_remote_client cluster_id conn >>= fun client ->
-    let t = {sa ; mc = client; } in
-    Lwt.return t
-
-  let block_size t = 0x00001000 
-  let block_mask  = 0xffffe000
-
-  let make_key lba = Printf.sprintf "%016x" lba 
-
-  let read_block t lba = 
-    let key = make_key lba in
-    let bs = block_size t in
-    Lwt.catch
-      (fun () -> 
-        t.mc # get key >>=fun block ->
-        assert (String.length block = bs);
-        Lwt.return block
-      )
-      (function 
-        | Arakoon_exc.Exception(Arakoon_exc.E_NOT_FOUND,_ )->
-          let r = String.make bs '\x00' in
-          Lwt.return r
-        | e -> Lwt.fail e
-      )
-
-  let write_blocks t writes = 
-    let seq = List.map 
-      (fun (lba,block) ->
-        let key = make_key lba in
-        Arakoon_client.Set (key,block)) writes
-    in
-    t.mc # sequence seq
-
-  let flush t = Lwt.return ()
-
-
-end : BLOCK)
