@@ -14,12 +14,23 @@ let log_f x = Lwt_io.printlf x
 
 let make_handle () = String.create 8 
   
+  
 let write_preamble oc device_size = 
   log_f "device_size:%i%!" device_size >>= fun () ->
+  let flags = String.make 4 '\x00' in
+  flags.[3] <- '\x11'; 
+  (* 
+     0x00000001: HAS_FLAGS 
+     0x00000002: READ_ONLY
+     0x00000004: SEND_FLUSH
+     0x00000010: ROTATIONAL 
+     0x00000020: SEND_TRIM (* not supported yet *)
+  *)
   let output = Buffer.create (16 + 8 + 128) in
   let () = P.output_raw output _MAGIC in
   let () = P.output_uint64 output device_size in
-  let () = P.output_raw  output (String.make 128  '\x00') in
+  let () = P.output_raw output flags in
+  let () = P.output_raw  output (String.make 124  '\x00') in
   let msg = P.contents output in
   Lwt_io.write oc msg 
 

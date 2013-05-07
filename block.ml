@@ -17,6 +17,7 @@ module type BLOCK = sig
 
   val write_blocks : t -> (lba * string) list -> unit Lwt.t
 
+  val trim_blocks : t -> lba list -> unit Lwt.t
   val flush : t -> unit Lwt.t
 end
 
@@ -98,6 +99,8 @@ module FileBlock = (struct
 
 
   let flush t = Lwt_unix.fsync t.fd
+
+  let trim_blocks t lbas = Lwt.return ()
 end : BLOCK)
 
 

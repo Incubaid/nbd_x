@@ -47,6 +47,6 @@ module ArakoonBlock = (struct
     t.mc # sequence seq
 
   let flush t = Lwt.return ()
-
+  let trim_blocks t lbas = Lwt.return ()
 
 end : BLOCK)

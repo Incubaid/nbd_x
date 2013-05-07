@@ -11,5 +11,6 @@ module type BACK = sig
   val write : t -> string -> int -> int -> int -> unit Lwt.t
 
   val flush : t -> unit Lwt.t
+  val trim  : t -> int -> int -> unit Lwt.t
   val disconnect : t -> unit Lwt.t
 end

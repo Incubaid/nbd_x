@@ -85,5 +85,7 @@ module CacheBlock (B: BLOCK) = (struct
     t.outstanding_writes <- [];
     Lwt.return ()
 
+  let trim_blocks t lbas = 
+    Lwt.return () 
 
 end: BLOCK)

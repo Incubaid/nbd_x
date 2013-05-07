@@ -12,6 +12,13 @@ module GenericBack(B:BLOCK) = (struct
     B.create uri >>= fun b ->
     Lwt.return { b }
 
+  let _lbas_of bs lba0 off dlen = 
+    let rec loop rlbas count lba roff = 
+      if roff = dlen 
+      then List.rev rlbas, count
+      else loop (lba :: rlbas) (count + 1) (lba + 1) (roff + bs)
+    in
+    loop [] 0 lba0 0
 
   let read t off dlen = 
     (* log_f "generic: read off:%016x dlen:%04x" off dlen >>= fun () -> *)
@@ -19,14 +26,7 @@ module GenericBack(B:BLOCK) = (struct
     let lba0 = off / bs in
     match off mod bs, dlen mod bs with
       | 0,0 ->
-        let lbas, count =
-          let rec loop rlbas count lba roff = 
-            if roff = dlen 
-            then List.rev rlbas, count
-            else loop (lba :: rlbas) (count + 1) (lba + 1) (roff + bs)
-          in
-          loop [] 0 lba0 0
-        in
+        let lbas, count = _lbas_of bs lba0 off dlen in
         (* log_f "count=%i" count >>= fun () -> *)
         B.read_blocks t.b lbas >>= fun lbabs ->
         let r = String.create dlen in
@@ -47,7 +47,19 @@ module GenericBack(B:BLOCK) = (struct
           Lwt.return part
         end
       | r,dr -> Lwt.fail (Failure (Printf.sprintf "case not supported: bs=%i r=%i,dr=%i" bs r dr))
-        
+
+  let trim t off dlen = 
+    log_f "generic: trim %x %x" off dlen >>= fun () ->
+    let bs = block_size t in
+    let lba0 = off / bs in
+    let lbas, count = _lbas_of bs lba0 off dlen in
+    (* This doesn't really work as trim sometimes does things like 
+       trim off:0x0 dlen=0x7ffff000
+       which is a lot of lbas ...
+    *)
+    B.trim_blocks t.b lbas >>= fun () ->
+    Lwt.return ()
+
   let write t buf boff dlen off =
     let bs = block_size t in
     let lba = off / bs in

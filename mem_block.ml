@@ -57,5 +57,8 @@ module MemBlock = (struct
 
   let flush t = Lwt.return ()
 
+  let trim_blocks t lbas = 
+    log_f "trim [%s]" (String.concat ";" (List.map string_of_int lbas)) >>= fun () ->
+    Lwt.return ()
 end : BLOCK)
 

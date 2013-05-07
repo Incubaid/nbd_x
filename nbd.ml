@@ -71,6 +71,13 @@ module Nbd(B:BACK) = (struct
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end
+              | 4 -> (* TRIM *)
+                begin
+                  log_f "trim\t0x%016x\t0x%08x" offset dlen >>= fun () ->
+                  B.trim back offset dlen >>= fun () -> 
+                  Nbd_protocol.write_response oc 0 handle >>= fun () ->
+                  loop back
+                end
               | r ->
                 begin
                   log_f "r=%i" r >>= fun () ->

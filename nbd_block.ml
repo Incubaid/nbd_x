@@ -64,7 +64,11 @@ module NBDBlock = (struct
     in
     Lwt_list.map_s (fun lba -> read_block lba >>= fun block -> Lwt.return (lba,block)) lbas
 
-    
+
+  let trim_blocks t lbas = 
+    log_f "trim_blocks [%s]" (String.concat ";" (List.map string_of_int lbas)) >>= fun () ->
+    (* ... *)
+    Lwt.return ()
     
 
     
