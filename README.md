@@ -4,7 +4,7 @@ nbd_x
 experimental nbd server:
 
 * building it:
-  ocamlbuild -use-ocamlfind nbd.native
+  make
 
 
 * running the file backend:
@@ -14,7 +14,7 @@ experimental nbd server:
   ./nbd.native mem:///whatever
 
 * running the arakoon backend:
-  ./nbd.native "arakoon://127.0.0.1:4000/ricky"
+  ./nbd.native -p 9000 arakoon://ricky/arakoon_0#127.0.0.1#4000/arakoon_1#127.0.0.1#4001
 
   beware, for the moment this one only supports single node arakoon clusters.
 
