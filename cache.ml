@@ -6,13 +6,18 @@ module CacheBlock (B: BLOCK) = (struct
   module LbaMap = Map.Make(struct type t = lba let compare = compare end)
   module StringMap = Map.Make(String)
   type block = string
+  type known = block LbaMap.t
   type t = { 
     back : B.t;
-    mutable known: block LbaMap.t;
+    mutable known: known;
     mutable outstanding_writes: (lba * block) list;
   }
   
+  let _max_size = 3000
+
   let block_size t = B.block_size t.back
+
+  let device_size t = B.device_size t.back
 
   let create = 
     let ts = ref (Hashtbl.create 5) in
@@ -34,7 +39,7 @@ module CacheBlock (B: BLOCK) = (struct
 
   let _learn_block known (lba,block) = 
     let known'= 
-      if LbaMap.cardinal known > 3000 
+      if LbaMap.cardinal known > _max_size
       then
         let k,_ = LbaMap.choose known in
         LbaMap.remove k known

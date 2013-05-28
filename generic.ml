@@ -20,14 +20,26 @@ module GenericBack(B:BLOCK) = (struct
     in
     loop [] 0 lba0 0
 
+  let _lbas2s lbas =
+    let b = Buffer.create 128 in
+    let lba2s x = Printf.sprintf "%04x" x in
+    let rec loop = function
+      | [] -> Buffer.contents b
+      | [x] -> begin Buffer.add_string b (lba2s x); Buffer.contents b end
+      | x::((y::rest) as t) ->
+        let () = Buffer.add_string b (lba2s x) in
+        let () = Buffer.add_char b ';' in
+        loop t
+    in
+    loop lbas
+  
   let read t off dlen = 
-    (* log_f "generic: read off:%016x dlen:%04x" off dlen >>= fun () -> *)
+    log_f "generic: read off:%016x dlen:%04x%!" off dlen >>= fun () ->
     let bs = block_size t in
     let lba0 = off / bs in
     match off mod bs, dlen mod bs with
       | 0,0 ->
         let lbas, count = _lbas_of bs lba0 off dlen in
-        (* log_f "count=%i" count >>= fun () -> *)
         B.read_blocks t.b lbas >>= fun lbabs ->
         let r = String.create dlen in
         let () = 
@@ -46,7 +58,12 @@ module GenericBack(B:BLOCK) = (struct
           let part = String.sub block inner dlen in
           Lwt.return part
         end
-      | r,dr -> Lwt.fail (Failure (Printf.sprintf "case not supported: bs=%i r=%i,dr=%i" bs r dr))
+      | r,dr -> 
+        log_f "generic case (2)%!" >>= fun () ->
+        (* "case not supported: bs=1024 r=0,dr=512" *)
+        let lbas, count = _lbas_of bs lba0 off dlen in
+        log_f "lbas=%S%!" (String.concat ";" (List.map string_of_int lbas)) >>= fun () ->
+        Lwt.fail (Failure (Printf.sprintf "case not supported: bs=%i r=%i,dr=%i%!" bs r dr))
 
   let trim t off dlen = 
     log_f "generic: trim %x %x" off dlen >>= fun () ->
@@ -111,6 +128,6 @@ module GenericBack(B:BLOCK) = (struct
 
   let disconnect t = log_f "disconnect%!" >>= fun () ->Lwt.return ()
 
-  let device_size t = 6 * 1024 * 1024 * 1024
+  let device_size t = B.device_size t.b
     
 end : BACK)

@@ -9,7 +9,7 @@ module MemBlock = (struct
   type t = { mutable blocks : string StringMap.t }
 
   let block_size t = 0x00001000
-
+  let device_size t = 6 * 1024 * 1024
   let zeros t = String.make (block_size t) '\x00'
 
 

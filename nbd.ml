@@ -10,8 +10,6 @@ end
 
 module Nbd(B:BACK) = (struct
 
-
-
   let nbd uri socket =
     log_f "nbd: %s" uri >>= fun () ->
     let buffer_size = 8192 in
@@ -28,15 +26,17 @@ module Nbd(B:BACK) = (struct
         let () = P.reset input in
         let  magic  = P.input_uint32 input in
         let request = P.input_uint32 input in
-        let handle  = P.input_raw input 8 in
+        let handle  = P.input_raw input 8  in
         let offset  = P.input_uint64 input in
         let dlen    = P.input_uint32 input in
         assert (magic = 0x25609513);
-        (* log_f "req=%i offset=%016x dlen=%i%!" request offset dlen >>= fun ()->   *)
+        let stamp = Unix.gettimeofday() in
+        log_f "nbd: req=%i offset=%016x dlen=%x\t%f%!" request offset dlen stamp
+        >>= fun ()->
         if offset < 0 || offset +dlen > device_size
         then
           begin
-            log_f "%i < 0 || %i >= %i" offset offset device_size >>= fun () ->
+            log_f "nbd: %i < 0 || %i >= %i" offset offset device_size >>= fun () ->
             Nbd_protocol.write_response oc 1 handle >>= fun () ->
             log_f "ending it here %!"
           end
@@ -45,8 +45,6 @@ module Nbd(B:BACK) = (struct
             match request with
               | 0 -> (* READ *)
                 begin
-                  (* let stamp = Unix.gettimeofday() in
-                  log_f "read\t0x%016x\t0x%08x\t%f%!" offset dlen stamp >>= fun () ->  *)
                   B.read back offset dlen >>= fun buf ->
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   Lwt_io.write oc buf >>= fun () ->
@@ -54,8 +52,6 @@ module Nbd(B:BACK) = (struct
                 end
               | 1 -> (* WRITE *)
                 begin
-                  (* let stamp = Unix.gettimeofday() in
-                  log_f "write\t0x%016x\t0x%08x\t%f%!" offset dlen stamp >>= fun () -> *)
                   let buf = String.create dlen in
                   Lwt_io.read_into_exactly ic buf 0 dlen >>= fun () ->
                   B.write back buf 0 dlen offset >>= fun () ->
@@ -74,14 +70,12 @@ module Nbd(B:BACK) = (struct
                 end
               | 4 -> (* TRIM *)
                 begin
-                  log_f "trim\t0x%016x\t0x%08x" offset dlen >>= fun () ->
                   B.trim back offset dlen >>= fun () ->
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end
               | r ->
                 begin
-                  log_f "r=%i" r >>= fun () ->
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   loop back
                 end

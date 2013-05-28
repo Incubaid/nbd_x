@@ -78,6 +78,7 @@ module ArakoonBlock = (struct
     Lwt.return t
 
   let block_size t = 0x00001000
+  let device_size t = (6 * 1024 * 1024)
   let block_mask  = 0xffffe000
 
   let make_key lba = Printf.sprintf "%016x" lba

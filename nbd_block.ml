@@ -26,6 +26,7 @@ module NBDBlock = (struct
     Lwt.return t 
 
   let block_size t = 4096 
+  let device_size t = t.device_size
 
   let flush t = 
     Nbd_protocol.write_request t.oc Nbd_protocol._FLUSH t.handle 0 0 >>= fun () ->

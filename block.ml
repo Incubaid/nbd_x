@@ -19,6 +19,8 @@ module type BLOCK = sig
 
   val trim_blocks : t -> lba list -> unit Lwt.t
   val flush : t -> unit Lwt.t
+
+  val device_size: t -> int
 end
 
 
@@ -49,7 +51,7 @@ module FileBlock = (struct
       
 
   let block_size t = 1024
-
+  let device_size t = t.device_size
   let rec _read_buf fd buf o td = 
     if td = 0
     then Lwt.return () 
