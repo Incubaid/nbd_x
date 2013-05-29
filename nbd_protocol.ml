@@ -8,13 +8,14 @@ let _FLUSH = 3
 let magic = 0x25609513
 
 open Lwt
-
-
-let log_f x = Lwt_io.printlf x
+open Tools
 
 let make_handle () = String.create 8 
   
-  
+type preamble = {device_size: int}  
+
+let preamble2s p = Printf.sprintf "{device_size = %i}" p.device_size
+
 let write_preamble oc device_size = 
   log_f "device_size:%i%!" device_size >>= fun () ->
   let flags = String.make 4 '\x00' in
@@ -33,6 +34,16 @@ let write_preamble oc device_size =
   let () = P.output_raw  output (String.make 124  '\x00') in
   let msg = P.contents output in
   Lwt_io.write oc msg 
+
+let read_preamble ic = 
+  let s = 16 + 8 + 128 in
+  let buf = String.create s in
+  Lwt_io.read_into_exactly ic buf 0 s >>= fun () ->
+  let input = P.make_input buf 0 in
+  let magic = P.input_raw input 16 in
+  assert (magic = _MAGIC);
+  let device_size = P.input_uint64 input in
+  Lwt.return {device_size}
 
 let write_response oc rc handle = 
   let output = Buffer.create (4 + 4 + 8) in

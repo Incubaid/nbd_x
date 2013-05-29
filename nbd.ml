@@ -46,6 +46,7 @@ module Nbd(B:BACK) = (struct
               | 0 -> (* READ *)
                 begin
                   B.read back offset dlen >>= fun buf ->
+                  assert (String.length buf = dlen);
                   Nbd_protocol.write_response oc 0 handle >>= fun () ->
                   Lwt_io.write oc buf >>= fun () ->
                   loop back

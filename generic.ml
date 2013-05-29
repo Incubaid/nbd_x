@@ -14,51 +14,38 @@ module GenericBack(B:BLOCK) = (struct
 
   let _lbas_of bs lba0 off dlen = 
     let rec loop rlbas count lba roff = 
-      if roff = dlen 
+      if roff >= dlen 
       then List.rev rlbas, count
       else loop (lba :: rlbas) (count + 1) (lba + 1) (roff + bs)
     in
     loop [] 0 lba0 0
 
-
-  
   let read t off dlen = 
+    log_f "generic: read off:0x%016x dlen=0x%04x%!" off dlen >>= fun () ->
     if dlen = 0 
     then
       log_f "empty read ?!" >>= fun () ->
       Lwt.return ""
     else
       begin
-        log_f "generic: read off:0x%016x dlen=0x%04x%!" off dlen >>= fun () ->
         let bs = block_size t in
-        let lba0 = off / bs in
-        match off mod bs, dlen mod bs with
-        | 0,0 ->
-          let lbas, count = _lbas_of bs lba0 off dlen in
-          B.read_blocks t.b lbas >>= fun lbabs ->
-          let r = String.create dlen in
-          let () = 
-            List.iter (fun (lba,block) -> 
-              let pos = (lba - lba0) * bs in
-              String.blit block 0 r pos bs)
-              lbabs
-          in
-          Lwt.return r
-            
-        | r,0 when r + dlen < bs -> 
-          begin
-            let inner = r in
-            B.read_blocks t.b [lba0] >>= fun lbabs ->
-            let (_,block) = List.hd lbabs in
-            let part = String.sub block inner dlen in
-            Lwt.return part
-          end
-        | r,dr -> 
-          log_f "generic case (2)%!" >>= fun () ->
-          (* "case not supported: bs=1024 r=0,dr=512" *)
-          let lbas, count = _lbas_of bs lba0 off dlen in
-          log_f "lbas=[%s]%!" (lbas2s lbas) >>= fun () ->
-          Lwt.fail (Failure (Printf.sprintf "case not supported: bs=%i r=%i,dr=%i%!" bs r dr))
+        let lba0 = (off + bs -1) / bs in
+        let lbas , c = _lbas_of bs lba0 off dlen in
+        log_f "lbas=[%s] c=%i%!" (lbas2s lbas) c >>= fun () ->
+        B.read_blocks t.b lbas >>= fun lbabs ->
+        let r = String.create dlen in
+        let () = 
+          List.iter (fun (l, b) ->
+            let pos_0 = (l - lba0) * bs in
+            let pos_1 = pos_0 + bs in
+            let len = 
+              if pos_1 <= dlen 
+              then bs
+              else dlen - pos_0
+            in
+            String.blit b 0 r pos_0 len) lbabs
+        in
+        Lwt.return r
       end
 
   let trim t off dlen = 
