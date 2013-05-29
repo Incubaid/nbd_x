@@ -9,7 +9,7 @@ module MemBlock = (struct
   type t = { mutable blocks : string StringMap.t }
 
   let block_size t = 0x00001000
-  let device_size t = 6 * 1024 * 1024
+  let device_size t = 6 * 1024 * 1024 * 1024
   let zeros t = String.make (block_size t) '\x00'
 
 
@@ -58,7 +58,9 @@ module MemBlock = (struct
   let flush t = Lwt.return ()
 
   let trim_blocks t lbas = 
-    log_f "trim [%s]" (String.concat ";" (List.map string_of_int lbas)) >>= fun () ->
+    log_f "trim [%s]" (lbas2s lbas) >>= fun () ->
     Lwt.return ()
+
+  let disconnect t = Lwt.return ()
 end : BLOCK)
 

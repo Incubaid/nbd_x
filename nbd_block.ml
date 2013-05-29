@@ -21,6 +21,7 @@ module NBDBlock = (struct
     Lwt_io.read_into_exactly ic p 0 ps >>= fun () ->
     let input = P.make_input p 0 in
     let magic = P.input_raw input 16 in
+    assert (magic = Nbd_protocol._MAGIC);
     let device_size = P.input_uint64 input in
     let t = {ic;oc;device_size; handle} in
     Lwt.return t 
@@ -67,10 +68,14 @@ module NBDBlock = (struct
 
 
   let trim_blocks t lbas = 
-    log_f "trim_blocks [%s]" (String.concat ";" (List.map string_of_int lbas)) >>= fun () ->
+    log_f "trim_blocks [%s]" (lbas2s lbas) >>= fun () ->
     (* ... *)
     Lwt.return ()
     
+  let disconnect t = 
+    Nbd_protocol.write_request t.oc Nbd_protocol._DISCONNECT t.handle 0 0>>= fun () ->
+    Lwt_io.close t.oc >>= fun () ->
+    Lwt_io.close t.ic 
 
     
 end :BLOCK)

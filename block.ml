@@ -20,6 +20,7 @@ module type BLOCK = sig
   val trim_blocks : t -> lba list -> unit Lwt.t
   val flush : t -> unit Lwt.t
 
+  val disconnect : t -> unit Lwt.t
   val device_size: t -> int
 end
 
@@ -37,6 +38,39 @@ let to_hex s =
   loop [] (String.length s-1)
 
 
+let lba2s x = Printf.sprintf "%04x" x 
+
+let lbas2s lbas =
+  let b = Buffer.create 128 in  
+  let rec loop = function
+    | [] -> Buffer.contents b
+    | [x] -> begin Buffer.add_string b (lba2s x); Buffer.contents b end
+    | x :: t ->
+      let () = Buffer.add_string b (lba2s x) in
+      let () = Buffer.add_char b ';' in
+      loop t
+  in
+  loop lbas
+
+let lbabs2s lbabs = 
+  let buf = Buffer.create 128 in
+  let add_one (l,b) = 
+    Buffer.add_char buf '(';
+    Buffer.add_string buf (lba2s l);
+    let b0 = b.[0]
+    and bl = b.[String.length b - 1]
+    in
+    Buffer.add_string buf (Printf.sprintf ", %C...%C)" b0 bl)
+  in
+
+  let rec loop = function
+    | []     -> Buffer.contents buf
+    | [x]    -> add_one x; Buffer.contents buf
+    | x :: t -> add_one x; Buffer.add_char buf ';'; loop t
+  in
+  loop lbabs
+
+
 
 module FileBlock = (struct
   type t = { fd: Lwt_unix.file_descr;
@@ -50,7 +84,7 @@ module FileBlock = (struct
     Lwt.return {fd;device_size}
       
 
-  let block_size t = 1024
+  let block_size t = 4096
   let device_size t = t.device_size
   let rec _read_buf fd buf o td = 
     if td = 0
@@ -101,6 +135,8 @@ module FileBlock = (struct
 
 
   let flush t = Lwt_unix.fsync t.fd
+
+  let disconnect t = Lwt_unix.fsync t.fd
 
   let trim_blocks t lbas = Lwt.return ()
 end : BLOCK)

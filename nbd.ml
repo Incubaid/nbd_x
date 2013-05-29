@@ -12,7 +12,7 @@ module Nbd(B:BACK) = (struct
 
   let nbd uri socket =
     log_f "nbd: %s" uri >>= fun () ->
-    let buffer_size = 8192 in
+    let buffer_size = 65536 in
     let ic = Lwt_io.of_fd ~buffer_size ~mode:Lwt_io.input socket in
     let oc = Lwt_io.of_fd ~buffer_size ~mode:Lwt_io.output socket in
     B.create uri >>= fun back ->
@@ -31,7 +31,7 @@ module Nbd(B:BACK) = (struct
         let dlen    = P.input_uint32 input in
         assert (magic = 0x25609513);
         let stamp = Unix.gettimeofday() in
-        log_f "nbd: req=%i offset=%016x dlen=%x\t%f%!" request offset dlen stamp
+        log_f "nbd: req=%i offset=0x%016x dlen=0x%04x\t%f%!" request offset dlen stamp
         >>= fun ()->
         if offset < 0 || offset +dlen > device_size
         then
@@ -88,11 +88,11 @@ module Nbd(B:BACK) = (struct
 
 end : NBD)
 open Generic
+open Cache
 
-
-module NbdF = (Nbd(GenericBack(Cache.CacheBlock(Block.FileBlock))) : NBD)
+module NbdF = (Nbd(GenericBack(CacheBlock(Block.FileBlock))) : NBD)
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD)
-module NbdA = (Nbd(GenericBack(Cache.CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
+module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
 module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
 
 let main () =
@@ -105,17 +105,12 @@ let main () =
     ]
   in
   let port = ref 9000 in
-  (*
-     "file:////tmp/my_vol"
-     "arakoon://127.0.0.1:4000/ricky"
-     "mem://"
-  *)
   let uri = ref "mem://" in
   let args = [("-p", Arg.Set_int port, Printf.sprintf "server port (default is %i)" !port);
              ] in
   let help = (Printf.sprintf "%s [-p port] uri\n" Sys.argv.(0)) ^
     "\npossible URIs are:\n" ^
-    "\tarakoon://<cluster_id>/<node0_id#<host0>#<port0>/node1_id#<host1>#<port1>...\n" ^
+    "\tarakoon://<cluster_id>/<vol_id>/<node0_id#<host0>#<port0>/node1_id#<host1>#<port1>...\n" ^
     "\tfile://tmp/my_vol\n" ^
     "\tmem://\n"
   in

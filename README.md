@@ -14,7 +14,7 @@ experimental nbd server:
   ./nbd.native mem:///whatever
 
 * running the arakoon backend:
-  ./nbd.native -p 9000 arakoon://ricky/arakoon_0#127.0.0.1#4000/arakoon_1#127.0.0.1#4001
+  ./nbd.native -p 9000 arakoon://ricky/vol0/arakoon_0#127.0.0.1#4000/arakoon_1#127.0.0.1#4001
 
 
 
