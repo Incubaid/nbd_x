@@ -104,7 +104,7 @@ module ArakoonBlock = (struct
   let make_key t lba = Printf.sprintf "%s/%016x" t.vol_id lba
 
   let read_blocks t lbas =
-    log_f "ArakoonBlock: read_blocks [%s]" (lbas2s lbas) >>= fun () ->
+    log_f "ArakoonBlock: read_blocks (%i blocks)" (List.length lbas) >>= fun () ->
     let bs = block_size t in
     let keys = List.map (make_key t) lbas in
     let f (mc: Arakoon_client.client) =
@@ -116,7 +116,7 @@ module ArakoonBlock = (struct
     C.with_client t.c f
 
   let write_blocks t writes =
-    log_f "ArakoonBlock: write_blocks [%s]" (lbabs2s writes) >>= fun () ->
+    log_f "ArakoonBlock: write_blocks (%i blocks)" (List.length writes) >>= fun () ->
     let seq = List.map
       (fun (lba,block) ->
         let key = make_key t lba in

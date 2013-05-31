@@ -94,7 +94,9 @@ module GenericBack(B:BLOCK) = (struct
   let flush t = B.flush t.b
 
   let disconnect t = 
+    log_f "generic, disconnecting%!" >>= fun () ->
     B.disconnect  t.b >>= fun () ->
+    log_f "generic, disconnected%!" >>= fun ()->
     Lwt.return ()
 
   let device_size t = B.device_size t.b

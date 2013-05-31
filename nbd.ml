@@ -63,7 +63,9 @@ module Nbd(B:BACK) = (struct
                 end
               | 2 -> (* DISCONNECT *)
                 begin
-                  B.disconnect back
+                  B.disconnect back >>= fun () ->
+                  Nbd_protocol.write_response oc 0 handle 
+                  (* end of conversation *)
                 end
               | 3 -> (* FLUSH *)
                 begin
@@ -93,7 +95,7 @@ end : NBD)
 open Generic
 open Cache
 
-module NbdF = (Nbd(GenericBack(CacheBlock(Block.FileBlock))) : NBD)
+module NbdF = (Nbd(GenericBack(CacheBlock(File_block.FileBlock))) : NBD)
 
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD)
 module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
