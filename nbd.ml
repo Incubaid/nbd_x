@@ -31,9 +31,11 @@ module Nbd(B:BACK) = (struct
         let dlen    = P.input_uint32 input in
         assert (magic = 0x25609513);
         let stamp = Unix.gettimeofday() in
-        log_f "nbd: req=%i offset=0x%016x dlen=0x%04x\t%f%!" request offset dlen stamp
+        log_f "nbd: req=%i offset=0x%016x dlen=0x%08x\t%f%!" request offset dlen stamp
         >>= fun ()->
-        if offset < 0 || offset +dlen > device_size
+        if ((offset < 0) || 
+               (offset +dlen > device_size)) && 
+          request != 2 (* disconnect sometimes really sends awful offsets *)
         then
           begin
             log_f "nbd: %i < 0 || %i >= %i" offset offset device_size >>= fun () ->
@@ -92,6 +94,7 @@ open Generic
 open Cache
 
 module NbdF = (Nbd(GenericBack(CacheBlock(Block.FileBlock))) : NBD)
+
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD)
 module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
 module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
@@ -106,13 +109,15 @@ let main () =
     ]
   in
   let port = ref 9000 in
+  let host = ref "0.0.0.0" in
   let uri = ref "mem://" in
   let args = [("-p", Arg.Set_int port, Printf.sprintf "server port (default is %i)" !port);
+              ("-h", Arg.Set_string host, Printf.sprintf "server IP (default is %s)" !host);
              ] in
   let help = (Printf.sprintf "%s [-p port] uri\n" Sys.argv.(0)) ^
     "\npossible URIs are:\n" ^
     "\tarakoon://<cluster_id>/<vol_id>/<node0_id#<host0>#<port0>/node1_id#<host1>#<port1>...\n" ^
-    "\tfile://tmp/my_vol\n" ^
+    "\tfile:///tmp/my_vol\n" ^
     "\tmem://\n"
   in
   Arg.parse args (fun s -> uri := s) help;
@@ -122,7 +127,7 @@ let main () =
   let module MyNBD = (val (List.assoc which modules)) in
   let server () =
     let ss = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string "127.0.0.1", !port) in
+    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string !host, !port) in
     Lwt_unix.setsockopt ss Unix.SO_REUSEADDR true;
     Lwt_unix.bind ss sa;
     Lwt_unix.listen ss 1024;

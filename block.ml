@@ -27,6 +27,7 @@ module FileBlock = (struct
   type t = { fd: Lwt_unix.file_descr;
              device_size:int
            }
+  
   let create uri = 
     let fn = Scanf.sscanf uri "file://%s" (fun s -> s) in
     log_f "%s => filename: %S%!" uri fn >>= fun () ->
@@ -36,7 +37,9 @@ module FileBlock = (struct
       
 
   let block_size t = 4096
+
   let device_size t = t.device_size
+
   let rec _read_buf fd buf o td = 
     if td = 0
     then Lwt.return () 
@@ -87,7 +90,9 @@ module FileBlock = (struct
 
   let flush t = Lwt_unix.fsync t.fd
 
-  let disconnect t = Lwt_unix.fsync t.fd
+  let disconnect t = 
+    log_f "FileBlock:disconnect" >>= fun () ->
+    Lwt_unix.fsync t.fd >>= fun () -> Lwt_unix.close t.fd
 
   let trim_blocks t lbas = Lwt.return ()
 end : BLOCK)

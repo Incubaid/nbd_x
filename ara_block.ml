@@ -97,7 +97,7 @@ module ArakoonBlock = (struct
     let t = { c;vol_id;device_size } in
     Lwt.return t
 
-  let block_size t = 0x00001000
+  let block_size t = 0x00000400
   let device_size t = t.device_size
   let block_mask  = 0xffffe000
 

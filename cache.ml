@@ -75,16 +75,20 @@ module CacheBlock (B: BLOCK) = (struct
     Lwt.return ()
 
   let disconnect t = 
-    let w = _writes t in
-    if t.outstanding_writes = LbaMap.empty 
-    then Lwt.return ()
-    else
-      begin
-        B.write_blocks t.back w >>= fun () ->
-        t.outstanding_writes <- LbaMap.empty;
-        B.disconnect t.back
-      end
-
+    begin
+      if t.outstanding_writes = LbaMap.empty 
+      then Lwt.return ()
+      else
+        begin
+          let w = _writes t in
+          B.write_blocks t.back w >>= fun () ->
+          t.outstanding_writes <- LbaMap.empty;
+          Lwt.return ()
+        end
+    end
+    >>= fun ()->
+    B.disconnect t.back
+        
   let trim_blocks t lbas = 
     Lwt.return () 
 
