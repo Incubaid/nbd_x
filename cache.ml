@@ -19,7 +19,7 @@ module CacheBlock (B: BLOCK) = (struct
     mutable known : block_map;
   }
   
-  let _max_size = 3000
+  let _max_size = 4096
 
   let block_size t = B.block_size t.back
 
@@ -49,31 +49,41 @@ module CacheBlock (B: BLOCK) = (struct
     Lwt.return ()
 
   let _learn t writes = 
+    let lbas = List.map (fun (lba,_) -> lba) writes in
+    log_f "learning: [%s]" (lbas2s lbas) >>= fun () ->
     let known = t.known in
-    let known0 = List.fold_left (fun known (lba,block) -> LbaMap.add lba block known) known writes in
-    let rec forget known i =
+    let bs = block_size t in
+    let known0 = List.fold_left 
+      (fun known (lba,block) -> 
+        assert (String.length block = bs);
+        LbaMap.add lba block known) known writes in
+    let rec forget dumped known i =
       if i = 0 
-      then known
+      then dumped, known
       else 
         let (k,_) = LbaMap.choose known in
+        let dumped' = k :: dumped in
         let known' = LbaMap.remove k known in
-        forget known' (i-1)
+        forget dumped' known' (i-1)
     in
-    let known1, size = 
+    let dumped, known1, size = 
       let size = LbaMap.cardinal known0 in
       if size > _max_size 
-      then forget known0 (size - _max_size) , _max_size
-      else known0,size
+      then 
+        let dumped, known1 = forget [] known0 (size - _max_size) in 
+        dumped, known1, _max_size
+      else [], known0,size
     in
+    log_f "dumped:[%s]" (lbas2s dumped) >>= fun () ->
     t.known <- known1;
-    size
+    Lwt.return size
 
 
   let write_blocks t writes = 
     let os = t.outstanding_writes in
     let os' = List.fold_left (fun os (lba,block) -> LbaMap.add lba block os) os writes in
     t.outstanding_writes <- os';
-    let _ = _learn t writes in
+    _learn t writes >>= fun _ ->
     
     (* nbd-client sends no flushes *)
     let size = LbaMap.cardinal t.outstanding_writes in
@@ -91,11 +101,20 @@ module CacheBlock (B: BLOCK) = (struct
       
   let read_blocks t lbas = 
     log_f "Cache : read_blocks lbas=[%s]" (lbas2s lbas) >>= fun ()->
-    let k = List.filter (fun l ->      LbaMap.mem l t.known) lbas in
-    let u = List.filter (fun l -> not (LbaMap.mem l t.known)) lbas in
+    let kbs, u = List.fold_left (fun (k,u) lba -> 
+      if LbaMap.mem lba t.outstanding_writes
+      then 
+        let block = LbaMap.find lba t.outstanding_writes in
+        (lba,block) :: k , u
+      else if LbaMap.mem lba t.known 
+      then
+        let block = LbaMap.find lba t.known in
+        (lba,block) :: k , u
+      else
+        k, lba :: u) ([],[]) lbas
+    in
+    let k = List.map (fun (lba,_) -> lba) kbs in
     log_f "Cache : k=[%s] u=[%s]" (lbas2s k) (lbas2s u) >>= fun () ->
-
-    let kbs = List.map (fun l -> (l, LbaMap.find l t.known)) k in
     B.read_blocks t.back u >>= fun ubs ->
     let _ = _learn t ubs in
     let r = kbs @ ubs in
@@ -107,6 +126,7 @@ module CacheBlock (B: BLOCK) = (struct
     
 
   let disconnect t = 
+    log_f "Cache : disconnect" >>= fun () ->
     begin
       if t.outstanding_writes = LbaMap.empty 
       then Lwt.return ()

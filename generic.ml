@@ -17,7 +17,11 @@ module GenericBack(B:BLOCK) = (struct
     B.read_blocks t.b [lba] >>= fun lbabs ->
     let _,block = List.hd lbabs in
     Lwt.return block
-        
+      
+  type instruction = { lba: lba; 
+                       b_off : int;
+                       result_off: int;
+                       b_len : int}
 
   let read t off dlen = 
     if dlen = 0 
@@ -29,24 +33,36 @@ module GenericBack(B:BLOCK) = (struct
         let bs = block_size t in
         let lba0 = off / bs in
         let result = String.create dlen in
-        let rec loop result_off lba b_off b_len todo =
+        let rec build_ins acc result_off lba b_off b_len todo =
           if todo = 0 
-          then Lwt.return result
+          then List.rev acc
           else
             begin
-              _read_block t lba >>= fun block ->
-              let () = String.blit block b_off result result_off b_len in
+              let acc' = {lba;result_off;b_off;b_len} :: acc in
               let result_off' = result_off + b_len in
               let lba' = lba + 1 in
               let b_off' = 0 in
               let todo'  = todo - b_len in
               let b_len' = min todo' bs in
-              loop result_off' lba' b_off' b_len' todo'
+              build_ins acc' result_off' lba' b_off' b_len' todo'
             end
         in
         let b_off = off mod bs in
         let b_len = min dlen (bs - b_off) in
-        loop 0 lba0 b_off b_len dlen 
+        let ins = build_ins [] 0 lba0 b_off b_len dlen in
+        let lbas = List.map (fun ins -> ins.lba) ins in
+        B.read_blocks t.b lbas >>= fun lbabs ->
+        let rec blit ins lbabs =
+          match ins, lbabs with
+          | [],[] -> ()
+          | x :: xs, (lba,block) :: ys -> 
+            assert (x.lba = lba);
+            let () = String.blit block x.b_off result x.result_off x.b_len in
+            blit xs ys
+          | _,_ -> failwith "mismatch"
+        in
+        let () = blit ins lbabs in
+        Lwt.return result
       end
 
   let trim t off dlen = 

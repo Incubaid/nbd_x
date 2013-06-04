@@ -40,7 +40,10 @@ module FileBlock = (struct
 
 
   let read_blocks t lbas = 
-    Lwt_list.map_s(fun lba -> read_block t lba >>= fun block -> Lwt.return (lba,block)) lbas
+    Lwt_list.map_s
+      (fun lba -> read_block t lba >>= fun block -> 
+        Lwt.return (lba,block)) 
+      lbas
       
   let rec _write_buf fd buf o td = 
     if td = 0 
@@ -58,6 +61,8 @@ module FileBlock = (struct
     let bs = block_size t in
     let write_block lba block = 
       let pos = lba * bs in
+      log_f "write lba:%016x pos:%016x %C %C" lba pos block.[0] block.[bs -1]
+      >>= fun () ->
       Lwt_unix.lseek fd pos Unix.SEEK_SET >>= fun pos' ->
       assert(pos' = pos);
       _write_buf fd block 0 bs

@@ -4,4 +4,3 @@ build:
 clean:
 	ocamlbuild -use-ocamlfind -clean
 .PHONY: build
-         

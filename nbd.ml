@@ -96,12 +96,18 @@ open Generic
 open Cache
 
 module NbdF = (Nbd(GenericBack(CacheBlock(File_block.FileBlock))) : NBD)
-
+module NbdF' = (Nbd(GenericBack(File_block.FileBlock)) : NBD)
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD)
 module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
 module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
 
-let main () =
+let show_version () = 
+  Printf.printf "git_revision:\t%S\n" Version.git_revision;
+  Printf.printf "compiled:\t%S\n" Version.compile_time;
+  Printf.printf "machine:\t%S\n" Version.machine
+
+
+let start_server uri host port=
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
   let modules =
     [("file"   , (module NbdF : NBD));
@@ -110,30 +116,16 @@ let main () =
      ("nbd"    , (module NbdN : NBD));
     ]
   in
-  let port = ref 9000 in
-  let host = ref "0.0.0.0" in
-  let uri = ref "mem://" in
-  let args = [("-p", Arg.Set_int port, Printf.sprintf "server port (default is %i)" !port);
-              ("-h", Arg.Set_string host, Printf.sprintf "server IP (default is %s)" !host);
-             ] in
-  let help = (Printf.sprintf "%s [-p port] uri\n" Sys.argv.(0)) ^
-    "\npossible URIs are:\n" ^
-    "\tarakoon://<cluster_id>/<vol_id>/<node0_id#<host0>#<port0>/node1_id#<host1>#<port1>...\n" ^
-    "\tfile:///tmp/my_vol\n" ^
-    "\tmem://\n"
-  in
-  Arg.parse args (fun s -> uri := s) help;
-
-  let which = Scanf.sscanf !uri "%s@://" (fun s -> s) in
+  let which = Scanf.sscanf uri "%s@://" (fun s -> s) in
   Printf.printf "which:%s\n%!" which;
   let module MyNBD = (val (List.assoc which modules)) in
   let server () =
     let ss = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string !host, !port) in
+    let sa = Unix.ADDR_INET (Unix.inet_addr_of_string host, port) in
     Lwt_unix.setsockopt ss Unix.SO_REUSEADDR true;
     Lwt_unix.bind ss sa;
     Lwt_unix.listen ss 1024;
-    log_f "server started on port %i" !port >>= fun () ->
+    log_f "server started on port %i" port >>= fun () ->
     let wrap f =
       Lwt.catch f (fun ex -> log_f "ex:%s" (Printexc.to_string ex))
     in
@@ -142,7 +134,7 @@ let main () =
         Lwt.catch
           (fun () ->
             Lwt_unix.accept ss >>= fun (fd,_) ->
-            Lwt.ignore_result (wrap (fun () -> MyNBD.nbd !uri fd));
+            Lwt.ignore_result (wrap (fun () -> MyNBD.nbd uri fd));
             Lwt.return ()
           )
           (function
@@ -155,5 +147,26 @@ let main () =
     loop ()
   in
   Lwt_main.run (server ())
+
+let main () =
+  let port = ref 9000 in
+  let host = ref "0.0.0.0" in
+  let uri = ref "mem://" in
+  let action = ref "server" in
+  let args = [("-p", Arg.Set_int port, Printf.sprintf "server port (default is %i)" !port);
+              ("-h", Arg.Set_string host, Printf.sprintf "server IP (default is %s)" !host);
+              ("--version", Arg.Unit (fun () -> action:= "version"), "show version info");
+             ] in
+  let help = (Printf.sprintf "%s [-p port] uri\n" Sys.argv.(0)) ^
+    "\npossible URIs are:\n" ^
+    "\tarakoon://<cluster_id>/<vol_id>/<node0_id#<host0>#<port0>/node1_id#<host1>#<port1>...\n" ^
+    "\tfile:///tmp/my_vol\n" ^
+    "\tmem://\n"
+  in
+  Arg.parse args (fun s -> uri := s) help;
+  match !action with
+  | "version" -> show_version()
+  | "server" -> start_server !uri !host !port
+  
 
 let () = main()
