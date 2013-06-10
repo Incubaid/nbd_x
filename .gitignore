@@ -2,3 +2,5 @@ _build/*
 _virtualenv/*
 build/*
 *.*~
+/nbd.native
+/nbd.byte
