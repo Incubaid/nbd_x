@@ -16,7 +16,7 @@ module type BLOCK = sig
 
   val write_blocks : t -> (lba * string) list -> unit Lwt.t
 
-  val trim_blocks : t -> lba list -> unit Lwt.t
+  val trim : t -> int -> int -> unit Lwt.t
   val flush : t -> unit Lwt.t
 
   val disconnect : t -> unit Lwt.t

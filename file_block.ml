@@ -77,7 +77,9 @@ module FileBlock = (struct
     Lwt_unix.fsync t.fd >>= fun () -> Lwt_unix.close t.fd >>= fun () ->
     log_f "FileBlock:disconnected"
 
-  let trim_blocks t lbas = Lwt.return ()
+  let trim t off dlen = 
+    log_f "FileBlock: trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
+    Lwt.return ()
 end : BLOCK)
 
 

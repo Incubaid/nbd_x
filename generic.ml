@@ -67,11 +67,13 @@ module GenericBack(B:BLOCK) = (struct
 
   let trim t off dlen = 
     log_f "generic: trim %x %x" off dlen >>= fun () ->
-    (* This doesn't really work as trim sometimes does things like 
+    (* We can't split this into 
+       a list of lbas here as we might get
        trim off:0x0 dlen=0x7ffff000
-       which is a lot of lbas ...
+       which is just too many lbas
     *)
-    failwith "TODO"
+    B.trim t.b off dlen
+
 
   let rec write t buf boff dlen off =
     let bs = block_size t in

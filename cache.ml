@@ -141,7 +141,8 @@ module CacheBlock (B: BLOCK) = (struct
     >>= fun ()->
     B.disconnect t.back
         
-  let trim_blocks t lbas = 
+  let trim t off dlen = 
+    log_f "Cache : trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
     Lwt.return () 
 
 end: BLOCK)

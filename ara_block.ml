@@ -127,6 +127,8 @@ module ArakoonBlock = (struct
 
   let flush t = Lwt.return ()
   let disconnect t = Lwt.return () 
-  let trim_blocks t lbas = Lwt.return ()
+  let trim t off dlen = 
+    log_f "ArakoonBlock: trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
+    Lwt.return ()
 
 end : BLOCK)

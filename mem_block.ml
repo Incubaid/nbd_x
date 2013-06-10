@@ -57,8 +57,8 @@ module MemBlock = (struct
 
   let flush t = Lwt.return ()
 
-  let trim_blocks t lbas = 
-    log_f "trim [%s]" (lbas2s lbas) >>= fun () ->
+  let trim t off dlen = 
+    log_f "mem : trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
     Lwt.return ()
 
   let disconnect t = Lwt.return ()
