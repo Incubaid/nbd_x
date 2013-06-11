@@ -3,13 +3,158 @@ open Lwt
 open Back
 open Block
 open Nbd_protocol
-
+open Lwtq
 module type NBD = sig
   val nbd : uri -> Lwt_unix.file_descr -> unit Lwt.t
 end
 
 module Nbd(B:BACK) = (struct
+
+  type dlen = int
+  type off = int
+  type handle = string
+  type rc = int
+  type request = 
+  | READ  of handle * off * dlen
+  | WRITE of handle * off * string
+  | FLUSH of handle 
+  | TRIM  of handle * off * dlen
+  | DISCONNECT of handle
+  | BAD of handle * rc
+
+  type resp =
+  | RRead of handle * rc * string
+  | RWRITE of handle * rc
+  | RFLUSH of handle * rc
+  | RTRIM of handle * rc
+  | RDISCONNECT of handle * rc
+  | RGENERIC of handle * rc
+
+  let handle_of = function
+    | RRead  (h,_,_) | RWRITE (h,_) | RFLUSH(h,_)
+    | RTRIM (h,_)    | RDISCONNECT (h,_)| RGENERIC(h,_) -> h
+
+  let rc_of = function
+    | RRead (_,rc,_) | RWRITE (_,rc) | RFLUSH  (_,rc)
+    | RTRIM (_,rc) | RDISCONNECT (_,rc) | RGENERIC(_,rc) -> rc
+                                    
   module Protocol = Nbd_protocol.Old
+
+  let writer_loop oc pull =
+    let rec loop () = 
+      pull () >>= fun resp ->
+      let h = handle_of resp
+      and rc = rc_of resp 
+      in
+      Protocol.write_response oc rc h >>= fun () ->
+      begin 
+        match resp with
+        | RRead (_,_,s) -> 
+            begin
+              Lwt_io.write oc s >>= fun () -> 
+              loop ()
+            end
+        | RWRITE (_,_)      -> loop ()
+        | RFLUSH (_,_)      -> loop ()
+        | RTRIM  (_,_)      -> loop ()
+        | RDISCONNECT (_,_) -> Lwt.return ()
+        | RGENERIC (_,_)    -> loop ()
+      end
+    in
+    loop ()
+
+
+  let reader_loop device_size ic push =
+    begin
+      let buffer = String.create 28 in
+      let input = P.make_input buffer 0 in
+      let rec loop () = 
+        begin
+          Lwt_io.read_into_exactly ic buffer 0 28 >>= fun () ->
+          let () = P.reset input in
+          let  magic  = P.input_uint32 input in
+          let request = P.input_uint32 input in
+          let handle  = P.input_raw input 8  in
+          let offset  = P.input_uint64 input in
+          let dlen    = P.input_uint32 input in
+          assert (magic = 0x25609513);
+          let stamp = Unix.gettimeofday() in
+          log_f "nbd: req=%i offset=0x%016x dlen=0x%08x\t%f%!" request offset dlen stamp
+          >>= fun ()->
+          if request = 2 (* TRIM sends bad params *)
+          ||
+            (dlen >= 0 && 
+               (offset >=0 ) && 
+               (offset + dlen) <= device_size)
+          then
+            begin
+              begin
+                match request with
+                | 0 -> return (READ(handle,offset,dlen))
+                | 1 -> 
+                  begin
+                    let buf = String.create dlen in
+                    Lwt_io.read_into_exactly ic buf 0 dlen >>= fun () ->
+                    let req = WRITE(handle,offset, buf) in
+                    return req
+                  end
+                | 2 -> return (DISCONNECT handle)
+                | 3 -> return (FLUSH handle)
+                | 4 -> return (TRIM (handle,offset,dlen))
+                | _ -> return (BAD (handle,1))
+              end 
+              >>= fun req -> 
+              push req >>= fun () -> 
+              loop ()
+            end
+          else
+            begin
+              push (BAD (handle,1)) >>= fun () ->
+              log_f "bad request; stopping session"
+            end
+        end
+      in
+      loop ()
+    end
+
+  let rec processor_loop device_size req_q resp_q back = 
+    Q.pull req_q >>= fun req ->
+    begin
+      match req with
+      | READ (h, off, dlen) ->
+        begin
+          B.read back off dlen >>= fun buf ->
+          return (RRead(h,0,buf)) 
+        end
+      | WRITE(h, off, buf) ->
+        begin
+          let dlen = String.length buf in
+          B.write back buf 0 dlen off >>= fun () ->
+          return (RWRITE(h,0)) 
+        end
+      | FLUSH h ->
+        begin
+          B.flush back >>= fun () ->
+          return (RFLUSH (h,0)) 
+        end
+      | TRIM (h, off, dlen) ->
+        begin
+          B.trim back off dlen >>= fun () ->
+          return (RTRIM (h,0))
+        end
+      | DISCONNECT h -> 
+        begin
+          B.disconnect back >>= fun () ->
+          return (RDISCONNECT(h,0))
+        end
+      | BAD (h,rc) -> return (RGENERIC (h,rc))
+    end
+    >>= fun resp ->
+    Q.push resp_q resp >>= fun () ->
+    processor_loop device_size req_q resp_q back
+    
+    
+
   let nbd uri socket =
     log_f "nbd: %s" uri >>= fun () ->
     let buffer_size = 131072 in
@@ -18,77 +163,21 @@ module Nbd(B:BACK) = (struct
     B.create uri >>= fun back ->
     let device_size = B.device_size back in
     Protocol.write_preamble oc device_size >>= fun () ->
-    let header = String.create 128 in
-    let input = P.make_input header 0 in
-    let rec loop back =
-      begin
-        Lwt_io.read_into_exactly ic header 0 28 >>= fun () ->
-        let () = P.reset input in
-        let  magic  = P.input_uint32 input in
-        let request = P.input_uint32 input in
-        let handle  = P.input_raw input 8  in
-        let offset  = P.input_uint64 input in
-        let dlen    = P.input_uint32 input in
-        assert (magic = 0x25609513);
-        let stamp = Unix.gettimeofday() in
-        log_f "nbd: req=%i offset=0x%016x dlen=0x%08x\t%f%!" request offset dlen stamp
-        >>= fun ()->
-        if ((offset < 0) || 
-               (offset +dlen > device_size)) && 
-          request != 2 (* disconnect sometimes really sends awful offsets *)
-        then
-          begin
-            log_f "nbd: %i < 0 || %i >= %i" offset offset device_size >>= fun () ->
-            Protocol.write_response oc 1 handle >>= fun () ->
-            log_f "ending it here %!"
-          end
-        else
-          begin
-            match request with
-              | 0 -> (* READ *)
-                begin
-                  B.read back offset dlen >>= fun buf ->
-                  assert (String.length buf = dlen);
-                  Protocol.write_response oc 0 handle >>= fun () ->
-                  Lwt_io.write oc buf >>= fun () ->
-                  loop back
-                end
-              | 1 -> (* WRITE *)
-                begin
-                  let buf = String.create dlen in
-                  Lwt_io.read_into_exactly ic buf 0 dlen >>= fun () ->
-                  B.write back buf 0 dlen offset >>= fun () ->
-                  Protocol.write_response oc 0 handle >>= fun () ->
-                  loop back
-                end
-              | 2 -> (* DISCONNECT *)
-                begin
-                  B.disconnect back >>= fun () ->
-                  Protocol.write_response oc 0 handle 
-                  (* end of conversation *)
-                end
-              | 3 -> (* FLUSH *)
-                begin
-                  B.flush back >>= fun () ->
-                  Protocol.write_response oc 0 handle >>= fun () ->
-                  loop back
-                end
-              | 4 -> (* TRIM *)
-                begin
-                  B.trim back offset dlen >>= fun () ->
-                  Protocol.write_response oc 0 handle >>= fun () ->
-                  loop back
-                end
-              | r ->
-                begin
-                  Protocol.write_response oc 0 handle >>= fun () ->
-                  loop back
-                end
-          end
-      end
+    let req_q = Q.create  () in
+    let resp_q = Q.create () in
+    
+    let push req = 
+      Q.push req_q req >>=fun () ->
+      log_f "req queue size:%i" (Q.length req_q) 
+    in
+    let pull ()  = 
+      log_f "resp queue size:%i" (Q.length resp_q) >>= fun () ->
+      Q.pull resp_q 
     in
     Lwt.catch
-      (fun () -> loop back)
+      (fun () -> Lwt.join [reader_loop device_size ic push; 
+                           writer_loop oc pull; 
+                           processor_loop device_size req_q resp_q back])
       (fun e -> log_f "e: %s" (Printexc.to_string e))
 
 end : NBD)
