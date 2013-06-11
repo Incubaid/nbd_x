@@ -87,7 +87,7 @@ module CacheBlock (B: BLOCK) = (struct
     
     (* nbd-client sends no flushes *)
     let size = LbaMap.cardinal t.outstanding_writes in
-    let max_out = 1024 in (* arbitrary *)
+    let max_out = 512 in (* arbitrary, but 1024 seems too high for nbd-verify *)
     if size >  max_out
     then
       begin
