@@ -2,7 +2,7 @@ open Lwt
 include Tools
 
 type lba = int
-
+type block = string
 
 module type BLOCK = sig
 

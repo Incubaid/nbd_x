@@ -7,7 +7,7 @@ module Q = struct
                 q : 'a Queue.t;
               }
 
-  let is_full t = Queue.length t.q >= 10
+  let is_full t = Queue.length t.q >= 256
 
   let create () = 
     { empty_m = Lwt_mutex.create();

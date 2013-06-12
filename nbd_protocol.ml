@@ -31,7 +31,7 @@ module Old = struct
      0x00000010: ROTATIONAL   (* X *)
      0x00000020: SEND_TRIM    (* not supported yet *)
   *)
-    let output = Buffer.create (16 + 8 + 128) in
+    let output = P.make_output (16 + 8 + 128) in
     let () = P.output_raw output _OLD_MAGIC in
     let () = P.output_uint64 output device_size in
     let () = P.output_raw output flags in
@@ -50,7 +50,7 @@ module Old = struct
     Lwt.return {device_size}
 
   let write_response oc rc handle = 
-    let output = Buffer.create (4 + 4 + 8) in
+    let output = P.make_output (4 + 4 + 8) in
     let () = P.output_raw output "gDf\x98" in
     let () = P.output_uint32 output rc     in
     let () = P.output_raw output handle    in
@@ -58,7 +58,7 @@ module Old = struct
     Lwt_io.write oc msg
       
   let write_request oc (*magic *) req handle offset dlen = 
-    let output = Buffer.create 28 in
+    let output = P.make_output 28 in
     let () = P.output_uint32 output old_magic  in
     let () = P.output_uint32 output req    in
     let () = P.output_raw    output handle in
