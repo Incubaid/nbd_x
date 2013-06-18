@@ -155,9 +155,18 @@ module CacheBlock (B: BLOCK) = (struct
 
     let k = List.map (fun (lba,_) -> lba) kbs in
     log_f "Cache : k=[%s] u=[%s]" (lbas2s k) (lbas2s u) >>= fun () ->
-    B.read_blocks t.back u >>= fun ubs ->
-    _learn t ubs >>= fun ()->
-    let r = kbs @ ubs in
+    begin (* don't go to the backend for empty lists *)
+      match u with
+      | [] -> Lwt.return kbs
+      | u ->
+        begin
+          B.read_blocks t.back u >>= fun ubs ->
+          _learn t ubs >>= fun ()->
+          let r = kbs @ ubs in
+          Lwt.return r
+        end
+    end
+    >>= fun r ->
     let sr = List.sort (fun (l0,_) (l1,_) -> l0 - l1) r in
     log_f "Cache : sr=[%s]" (lbabs2s sr) >>= fun () ->
     Lwt.return sr
