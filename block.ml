@@ -12,7 +12,7 @@ module type BLOCK = sig
 
   val create : string -> t Lwt.t
 
-  val read_blocks  : t -> lba list -> ((lba * string) list) Lwt.t
+  val read_blocks  : t -> lba list -> (lba * block) list Lwt.t
 
   val write_blocks : t -> (lba * string) list -> unit Lwt.t
 

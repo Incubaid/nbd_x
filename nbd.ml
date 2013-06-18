@@ -203,7 +203,7 @@ let show_version () =
 let start_server uri host port=
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
   let modules =
-    [("file"   , (module NbdF : NBD));
+    [("file"   , (module NbdF' : NBD));
      ("mem",     (module NbdM : NBD));
      ("arakoon", (module NbdA : NBD));
      ("nbd"    , (module NbdN : NBD));

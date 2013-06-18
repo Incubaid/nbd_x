@@ -62,6 +62,7 @@ module GenericBack(B:BLOCK) = (struct
           | _,_ -> failwith "mismatch"
         in
         let () = blit ins lbabs in
+        log_f "generic : read dlen=%0x16" dlen >>= fun () ->
         Lwt.return result
       end
 
@@ -105,16 +106,18 @@ module GenericBack(B:BLOCK) = (struct
     let block_off = off mod bs in
     let block_len = min (bs - block_off) dlen in
     loop [] lba0 boff block_off block_len dlen >>= fun lbabs ->
-    B.write_blocks t.b lbabs 
+    B.write_blocks t.b lbabs >>= fun () ->
+    log_f "generic: wrote dlen=%08x" dlen
+      
 
       
 
   let flush t = B.flush t.b
 
   let disconnect t = 
-    log_f "generic, disconnecting%!" >>= fun () ->
+    log_f "generic : disconnecting%!" >>= fun () ->
     B.disconnect  t.b >>= fun () ->
-    log_f "generic, disconnected%!" >>= fun ()->
+    log_f "generic : disconnected%!" >>= fun ()->
     Lwt.return ()
 
   let device_size t = B.device_size t.b
