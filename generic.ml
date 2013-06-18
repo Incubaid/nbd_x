@@ -52,6 +52,7 @@ module GenericBack(B:BLOCK) = (struct
         let ins = build_ins [] 0 lba0 b_off b_len dlen in
         let lbas = List.map (fun ins -> ins.lba) ins in
         B.read_blocks t.b lbas >>= fun lbabs ->
+        (* log_f "read: %S " (lbabs2s lbabs) >>= fun () -> *)
         let rec blit ins lbabs =
           match ins, lbabs with
           | [],[] -> ()
@@ -62,7 +63,7 @@ module GenericBack(B:BLOCK) = (struct
           | _,_ -> failwith "mismatch"
         in
         let () = blit ins lbabs in
-        log_f "generic : read dlen=%0x16" dlen >>= fun () ->
+        (* log_f "generic : read dlen=%08x" dlen >>= fun () -> *)
         Lwt.return result
       end
 
@@ -106,8 +107,9 @@ module GenericBack(B:BLOCK) = (struct
     let block_off = off mod bs in
     let block_len = min (bs - block_off) dlen in
     loop [] lba0 boff block_off block_len dlen >>= fun lbabs ->
-    B.write_blocks t.b lbabs >>= fun () ->
-    log_f "generic: wrote dlen=%08x" dlen
+    B.write_blocks t.b lbabs 
+    (* >>= fun () ->
+    log_f "generic: wrote dlen=%08x" dlen *)
       
 
       

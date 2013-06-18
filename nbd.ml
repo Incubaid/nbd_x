@@ -50,10 +50,11 @@ module Nbd(B:BACK) = (struct
       begin 
         match resp with
         | RRead (_,_,s) -> 
-            begin
-              Lwt_io.write oc s >>= fun () -> 
-              loop ()
-            end
+          begin
+            (* log_f "writer_loop writes: %S" s >>= fun () -> *)
+            Lwt_io.write oc s >>= fun () -> 
+            loop ()
+          end
         | RWRITE (_,_)      -> loop ()
         | RFLUSH (_,_)      -> loop ()
         | RTRIM  (_,_)      -> loop ()
@@ -185,10 +186,12 @@ open Generic
 open Cache
 
 module NbdF = (Nbd(GenericBack(CacheBlock(File_block.FileBlock))) : NBD)
-module NbdF' = (Nbd(GenericBack(File_block.FileBlock)) : NBD)
+module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock))): NBD)
 module NbdM = (Nbd(GenericBack(Mem_block.MemBlock)): NBD)
-module NbdA = (Nbd(GenericBack(CacheBlock(Ara_block.ArakoonBlock)))   : NBD)
 module NbdN = (Nbd(GenericBack(Nbd_block.NBDBlock))  : NBD)
+module NbdF' = (Nbd(GenericBack(File_block.FileBlock)) : NBD)
+module NbdA' =(Nbd(GenericBack(Ara_block.ArakoonBlock)) : NBD)
+
 
 type action = 
 | Version
@@ -204,9 +207,9 @@ let start_server uri host port=
   Sys.set_signal Sys.sigpipe Sys.Signal_ignore;
   let modules =
     [("file"   , (module NbdF' : NBD));
-     ("mem",     (module NbdM : NBD));
-     ("arakoon", (module NbdA : NBD));
-     ("nbd"    , (module NbdN : NBD));
+     ("mem",     (module NbdM  : NBD));
+     ("arakoon", (module NbdA  : NBD));
+     ("nbd"    , (module NbdN  : NBD));
     ]
   in
   let which = Scanf.sscanf uri "%s@://" (fun s -> s) in

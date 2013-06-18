@@ -29,6 +29,7 @@ module FileBlock = (struct
       end
 
   let read_block t lba =
+    (* log_f "FileBlock : read_block %s" (lba2s lba) >>= fun () -> *)
     let bs = block_size t in
     let pos = lba * bs in
     let fd = t.fd in
@@ -74,12 +75,12 @@ module FileBlock = (struct
   let flush t = Lwt_unix.fsync t.fd
 
   let disconnect t = 
-    log_f "FileBlock:disconnect" >>= fun () ->
+    log_f "FileBlock : disconnect" >>= fun () ->
     Lwt_unix.fsync t.fd >>= fun () -> Lwt_unix.close t.fd >>= fun () ->
-    log_f "FileBlock:disconnected"
+    log_f "FileBlock : disconnected"
 
   let trim t off dlen = 
-    log_f "FileBlock: trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
+    log_f "FileBlock : trim 0x%0x16x 0x%08x" off dlen >>= fun () ->
     Lwt.return ()
 end : BLOCK)
 

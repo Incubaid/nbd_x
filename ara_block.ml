@@ -60,7 +60,7 @@ module ArakoonBlock = (struct
             vol_id: string;
             device_size: int;
             block_size: int;
-            zeros : string;
+            make_zeros : unit -> string;
            }
 
 
@@ -97,8 +97,8 @@ module ArakoonBlock = (struct
     _fetch c vol_id "device_size" (Printf.sprintf "%i" def_device_size) >>= fun dss ->
     let device_size = Scanf.sscanf dss "%i" (fun i -> i) in
     let block_size = 0x00000400 in
-    let zeros = String.make block_size '\x00' in
-    let t = { c;vol_id;device_size; block_size; zeros } in
+    let make_zeros () = String.make block_size '\x00' in
+    let t = { c;vol_id;device_size; block_size; make_zeros } in
     Lwt.return t
 
   let block_size t = t.block_size 
@@ -166,7 +166,7 @@ module ArakoonBlock = (struct
             let b = Hashtbl.find hb h in
             (lba,b)
         with
-          Not_found -> (lba, t.zeros)
+          Not_found -> (lba, t.make_zeros())
       ) lbas 
       in
       Lwt.return r
@@ -180,7 +180,7 @@ module ArakoonBlock = (struct
     let f (mc: Arakoon_client.client) =
       mc # multi_get_option keys >>= fun bos ->
       let blocks = List.map (function 
-        | None -> t.zeros 
+        | None -> t.make_zeros ()
         | Some b -> assert (String.length b = bs);b) 
         bos 
       in
