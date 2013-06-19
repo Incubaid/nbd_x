@@ -4,3 +4,4 @@ build/*
 *.*~
 /nbd.native
 /nbd.byte
+test.native
