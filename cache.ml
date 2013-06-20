@@ -22,7 +22,7 @@ module LbaCache = (struct
   type k = lba
   type v = block
 
-  let max_size = 4000
+  let max_size = 8000
   let init () = Lwt.return LbaMap.empty
   let find t k =
     let vo = try Some (LbaMap.find k t) with Not_found -> None in
@@ -96,8 +96,8 @@ module CacheBlock (B: BLOCK) = (struct
   let flush t =
     let w = _writes t in
     log_f "Cache: flushing: %i" (List.length w) >>= fun () ->
-    let lbas = List.map fst w in
-    log_f "Cache: ws: [%s]" (lbas2s lbas) >>= fun () ->
+    (* let lbas = List.map fst w in
+    log_f "Cache: ws: [%s]" (lbas2s lbas) >>= fun () -> *)
     B.write_blocks t.back w >>= fun () ->
     B.flush t.back >>= fun () ->
     t.outstanding_writes <- LbaMap.empty;
@@ -120,7 +120,7 @@ module CacheBlock (B: BLOCK) = (struct
     _learn t writes >>= fun () ->
     (* nbd-client sends no flushes *)
     let size = LbaMap.cardinal t.outstanding_writes in
-    let max_out = 256 in (* arbitrary, but 1024 seems too high for nbd-verify *)
+    let max_out = 512 in (* arbitrary, but 1024 seems too high for nbd-verify *)
     if size >  max_out
     then
       begin

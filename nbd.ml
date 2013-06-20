@@ -42,6 +42,7 @@ module Nbd(B:BACK) = (struct
 
   let writer_loop oc pull =
     let rec loop () = 
+      Lwt_io.flush oc >>= fun () ->
       pull () >>= fun resp ->
       let h = handle_of resp
       and rc = rc_of resp 
@@ -60,7 +61,8 @@ module Nbd(B:BACK) = (struct
         | RTRIM  (_,_)      -> loop ()
         | RDISCONNECT (_,_) -> Lwt.return ()
         | RGENERIC (_,_)    -> loop ()
-      end
+      end 
+      
     in
     loop ()
 
@@ -221,6 +223,7 @@ let start_server uri host port=
     Lwt_unix.setsockopt ss Unix.SO_REUSEADDR true;
     Lwt_unix.bind ss sa;
     Lwt_unix.listen ss 1024;
+    log_f "git_version = %s " (Version.git_revision) >>= fun () ->
     log_f "server started on port %i" port >>= fun () ->
     let wrap f =
       Lwt.catch f (fun ex -> log_f "ex:%s" (Printexc.to_string ex))

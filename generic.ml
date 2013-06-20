@@ -10,7 +10,9 @@ module GenericBack(B:BLOCK) = (struct
   let create uri = 
     log_f "generic: create %s" uri >>= fun ()->
     B.create uri >>= fun b ->
-    log_f "created generic" >>= fun () ->
+    log_f "created generic (device_size=%i; block_size = %i)" 
+      (B.device_size b) (B.block_size b) 
+    >>= fun () ->
     Lwt.return { b }
 
   let _read_block t lba = 

@@ -63,22 +63,31 @@ module ArakoonBlock = (struct
             make_zeros : unit -> string;
            }
 
+  let def_device_size = 16 * 1024 * 1024 * 1024
+  let def_block_size = 4096
+
 
   let make_sa h p =
     let ia = Unix.inet_addr_of_string h in
     Unix.ADDR_INET (ia, p)
 
 
-  let _fetch c (vol_id:string) (k:string) (def:string) =
+  let _fetch_options c (vol_id:string) (kds:(string * string) list) =
     C.with_client c
       (fun client ->
-        let key = Printf.sprintf "%s/_%s" vol_id k in
-        Lwt.catch
-          (fun () -> client # get key)
-          (function
-          | e -> 
-            log_f "couldn't get %s => returning %s" key def >>= fun () ->
-            Lwt.return def)
+        let make_key k = Printf.sprintf "%s/_%s" vol_id k in
+        let a_keys = List.map (fun (k,_) -> make_key k) kds in
+        let keys = List.map (fun (k,_) -> k) kds in
+        let defs = List.map (fun (_,d) -> d) kds in
+        client # multi_get_option a_keys >>= fun vos ->
+        let vs = List.map2 (fun vo d ->
+          match vo with
+          | None -> d
+          | Some v -> v
+        ) vos defs 
+        in
+        let r = List.combine keys vs in
+        Lwt.return r
       )
  
   let create uri =
@@ -93,10 +102,15 @@ module ArakoonBlock = (struct
     Lwt_list.iter_s (fun (n,h,p) ->  log_f "nid:%s host:%s port:%i" n h p) hps >>= fun () ->
     let hpsas = List.map (fun (n,h,p) -> n, make_sa h p) hps in
     let c = C.create cluster_id hpsas in
-    let def_device_size = 16 * 1024 * 1024 * 1024 in
-    _fetch c vol_id "device_size" (Printf.sprintf "%i" def_device_size) >>= fun dss ->
-    let device_size = Scanf.sscanf dss "%i" (fun i -> i) in
-    let block_size = 0x00000400 in
+    let q = [("device_size",(Printf.sprintf "%i" def_device_size));
+             ("block_size", (Printf.sprintf "%i" def_block_size))]
+    in
+    let scan_int s = Scanf.sscanf s "%i" (fun i -> i) in
+    _fetch_options c vol_id q >>= fun options ->
+    let dss = List.assoc "device_size" options in
+    let bss = List.assoc "block_size"  options in
+    let device_size = scan_int dss in
+    let block_size  = scan_int bss in
     let make_zeros () = String.make block_size '\x00' in
     let t = { c;vol_id;device_size; block_size; make_zeros } in
     Lwt.return t
@@ -108,15 +122,26 @@ module ArakoonBlock = (struct
   let make_key t lba = Printf.sprintf "%s/%016x" t.vol_id lba
   let make_hkey t h = Printf.sprintf "%s/_hash/%s" t.vol_id h
 
+  let measure s f = 
+    let t0 = Unix.gettimeofday() in
+    f () >>= fun r ->
+    let t1 = Unix.gettimeofday() in
+    let d = t1 -. t0 in
+    log_f "ArakoonBlock : %s took: %f" s d >>= fun () ->
+    Lwt.return r
+
   let _write_blocks_direct t writes = 
-    log_f "ArakoonBlock: _write_blocks_direct (%i blocks)" (List.length writes) >>= fun () ->
+    let l = List.length writes in
+    log_f "ArakoonBlock : _write_blocks_direct (%i blocks)" l >>= fun () ->
     let seq = List.map
       (fun (lba,block) ->
         let key = make_key t lba in
         Arakoon_client.Set (key,block)) writes
     in
     let f mc = mc # sequence seq in
-    C.with_client t.c f
+    let s = Printf.sprintf "_write_blocks_direct (%i blocks) " l in
+    measure s (fun () -> C.with_client t.c f) 
+
 
   let _write_blocks_dedupe t writes = 
     log_f "ArakoonBlock : _write_blocks_dedupe (%i blocks)" (List.length writes) >>= fun () ->
@@ -174,7 +199,8 @@ module ArakoonBlock = (struct
     C.with_client t.c f
 
   let _read_blocks_direct t lbas = 
-    log_f "ArakoonBlock: read_blocks (%i blocks)" (List.length lbas) >>= fun () ->
+    let l = List.length lbas in
+    log_f "ArakoonBlock: read_blocks (%i blocks)" l >>= fun () ->
     let bs = block_size t in
     let keys = List.map (make_key t) lbas in
     let f (mc: Arakoon_client.client) =
@@ -187,11 +213,10 @@ module ArakoonBlock = (struct
       let r = List.combine lbas blocks in
       Lwt.return r
     in
-    let t0 = Unix.gettimeofday() in
-    C.with_client t.c f >>= fun r ->
-    let t1 = Unix.gettimeofday () in
-    log_f "ArakoonBlock: read_direct took %f" (t1 -. t0) >>= fun () ->
-    Lwt.return r
+    measure 
+      (Printf.sprintf "read_direct (%i blocks) " l)
+      (fun () -> C.with_client t.c f) 
+
 
   
           
